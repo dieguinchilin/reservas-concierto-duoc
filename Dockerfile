@@ -1,19 +1,29 @@
-FROM eclipse-temurin:22-jdk AS buildstage 
 
-RUN apt-get update && apt-get install -y maven
+# ETAPA 1: COMPILAR EL MICROSERVICIO
+FROM maven:3.9-eclipse-temurin-21 AS buildstage
 
 WORKDIR /app
 
 COPY pom.xml .
-COPY src /app/src
-RUN mvn clean package
 
-FROM eclipse-temurin:22-jdk
+COPY src ./src
 
-COPY --from=buildstage /app/target/ms-administracion-archivos-1.0.0.jar /app/app.jar
+RUN mvn -B clean package
 
-EXPOSE 8080
+# ETAPA 2: EJECUTAR EL MICROSERVICIO
+FROM eclipse-temurin:21-jre
 
+WORKDIR /app
+
+COPY --from=buildstage \
+    /app/target/ms-administracion-archivos-1.0.0.jar \
+    /app/app.jar
+
+# Carpeta donde montaremos AWS EFS
 RUN mkdir -p /app/efs
 
-CMD ["java", "-jar", "/app/app.jar"]
+# Puerto del microservicio
+EXPOSE 8080
+
+# Iniciar Spring Boot
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

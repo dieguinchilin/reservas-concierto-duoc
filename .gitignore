@@ -39,3 +39,4 @@ build/
 *.key
 .aws/
 *.log
+tickets/

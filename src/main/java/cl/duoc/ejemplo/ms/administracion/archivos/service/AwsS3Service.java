@@ -14,8 +14,10 @@ import cl.duoc.ejemplo.ms.administracion.archivos.exception.S3BucketNotFoundExce
 import cl.duoc.ejemplo.ms.administracion.archivos.exception.S3ObjectNotFoundException;
 import cl.duoc.ejemplo.ms.administracion.archivos.exception.S3OperationException;
 import cl.duoc.ejemplo.ms.administracion.archivos.exception.S3UploadException;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -35,189 +37,248 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 @RequiredArgsConstructor
 public class AwsS3Service {
 
-	private final S3Client s3Client;
+    private final S3Client s3Client;
 
-	/**
-	 * Lista todos los objetos en un bucket de S3
-	 * 
-	 * @param bucket Nombre del bucket
-	 * @return Lista de objetos en el bucket
-	 * @throws S3BucketNotFoundException si el bucket no existe
-	 * @throws S3AccessDeniedException   si no hay permisos para listar objetos
-	 */
-	public List<S3ObjectDto> listObjects(String bucket) {
+    // LISTAR ARCHIVOS DE S3
+    public List<S3ObjectDto> listObjects(String bucket) {
 
-		try {
-			log.info("Listando objetos del bucket: {}", bucket);
+        try {
+            log.info("Listando objetos del bucket: {}", bucket);
 
-			ListObjectsV2Request request = ListObjectsV2Request.builder().bucket(bucket).build();
+            ListObjectsV2Request request = ListObjectsV2Request.builder()
+                    .bucket(bucket)
+                    .build();
 
-			ListObjectsV2Response response = s3Client.listObjectsV2(request);
+            ListObjectsV2Response response = s3Client.listObjectsV2(request);
 
-			log.info("Se encontraron {} objetos en el bucket {}", response.contents().size(), bucket);
+            log.info("Se encontraron {} objetos en el bucket {}",
+                    response.contents().size(), bucket);
 
-			return response.contents().stream()
-					.map(obj -> new S3ObjectDto(obj.key(), obj.size(),
-							obj.lastModified() != null ? obj.lastModified().toString() : null))
-					.collect(Collectors.toList());
+            return response.contents().stream()
+                    .map(obj -> new S3ObjectDto(
+                            obj.key(),
+                            obj.size(),
+                            obj.lastModified() != null
+                                    ? obj.lastModified().toString()
+                                    : null))
+                    .collect(Collectors.toList());
 
-		} catch (NoSuchBucketException e) {
-			throw new S3BucketNotFoundException(bucket, e);
-		} catch (S3Exception e) {
-			if (e.statusCode() == 403) {
-				throw new S3AccessDeniedException("listar objetos del bucket: " + bucket, e);
-			}
-			throw new S3OperationException("Error al listar objetos del bucket: " + bucket, e);
-		}
-	}
+        } catch (NoSuchBucketException e) {
+            throw new S3BucketNotFoundException(bucket, e);
 
-	/**
-	 * Descarga un objeto de S3 como array de bytes
-	 * 
-	 * @param bucket Nombre del bucket
-	 * @param key    Clave del objeto
-	 * @return Array de bytes del objeto
-	 * @throws S3BucketNotFoundException si el bucket no existe
-	 * @throws S3ObjectNotFoundException si el objeto no existe
-	 * @throws S3AccessDeniedException   si no hay permisos para descargar
-	 */
-	public byte[] downloadAsBytes(String bucket, String key) {
+        } catch (S3Exception e) {
+            if (e.statusCode() == 403) {
+                throw new S3AccessDeniedException(
+                        "listar objetos del bucket: " + bucket, e);
+            }
 
-		try {
-			log.info("Descargando objeto: {} del bucket: {}", key, bucket);
+            throw new S3OperationException(
+                    "Error al listar objetos del bucket: " + bucket, e);
+        }
+    }
 
-			GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(bucket).key(key).build();
+    // DESCARGAR ARCHIVOS DESDE S3
+    public byte[] downloadAsBytes(String bucket, String key) {
 
-			ResponseBytes<GetObjectResponse> responseBytes = s3Client.getObjectAsBytes(getObjectRequest);
+        try {
+            log.info("Descargando objeto: {} del bucket: {}", key, bucket);
 
-			log.info("Objeto descargado exitosamente: {}", key);
+            GetObjectRequest request = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .build();
 
-			return responseBytes.asByteArray();
+            ResponseBytes<GetObjectResponse> response =
+                    s3Client.getObjectAsBytes(request);
 
-		} catch (NoSuchBucketException e) {
-			throw new S3BucketNotFoundException(bucket, e);
-		} catch (NoSuchKeyException e) {
-			throw new S3ObjectNotFoundException(key, bucket, e);
-		} catch (S3Exception e) {
-			if (e.statusCode() == 403) {
-				throw new S3AccessDeniedException("descargar el objeto: " + key, e);
-			}
-			throw new S3OperationException("Error al descargar el objeto: " + key, e);
-		}
-	}
+            log.info("Objeto descargado exitosamente: {}", key);
 
-	/**
-	 * Sube un archivo a S3
-	 * 
-	 * @param bucket Nombre del bucket
-	 * @param key    Clave del objeto
-	 * @param file   Archivo a subir
-	 * @throws InvalidFileException      si el archivo es inválido
-	 * @throws S3BucketNotFoundException si el bucket no existe
-	 * @throws S3AccessDeniedException   si no hay permisos para subir
-	 * @throws S3UploadException         si hay error al subir el archivo
-	 */
-	public void upload(String bucket, String key, MultipartFile file) {
+            return response.asByteArray();
 
-		// Validaciones del archivo
-		if (file == null || file.isEmpty()) {
-			throw new InvalidFileException("El archivo está vacío o es nulo");
-		}
+        } catch (NoSuchBucketException e) {
+            throw new S3BucketNotFoundException(bucket, e);
 
-		if (file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
-			throw new InvalidFileException("El nombre del archivo no es válido");
-		}
+        } catch (NoSuchKeyException e) {
+            throw new S3ObjectNotFoundException(key, bucket, e);
 
-		if (file.getSize() == 0) {
-			throw new InvalidFileException("El archivo no puede tener tamaño 0");
-		}
+        } catch (S3Exception e) {
+            if (e.statusCode() == 403) {
+                throw new S3AccessDeniedException(
+                        "descargar el objeto: " + key, e);
+            }
 
-		try {
-			log.info("Subiendo archivo: {} al bucket: {}, tamaño: {} bytes", key, bucket, file.getSize());
+            throw new S3OperationException(
+                    "Error al descargar el objeto: " + key, e);
+        }
+    }
 
-			PutObjectRequest putObjectRequest = PutObjectRequest.builder().bucket(bucket).key(key)
-					.contentType(file.getContentType()).contentLength(file.getSize()).build();
+    // SUBIR ARCHIVOS A S3 (METODO ORIGINAL)
+    public void upload(String bucket, String key, MultipartFile file) {
 
-			s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
+        if (file == null || file.isEmpty()) {
+            throw new InvalidFileException(
+                    "El archivo está vacío o es nulo");
+        }
 
-			log.info("Archivo subido exitosamente: {}", key);
+        if (file.getOriginalFilename() == null
+                || file.getOriginalFilename().isBlank()) {
+            throw new InvalidFileException(
+                    "El nombre del archivo no es válido");
+        }
 
-		} catch (NoSuchBucketException e) {
-			throw new S3BucketNotFoundException(bucket, e);
-		} catch (S3Exception e) {
-			if (e.statusCode() == 403) {
-				throw new S3AccessDeniedException("subir archivo al bucket: " + bucket, e);
-			}
-			throw new S3UploadException("Error al subir el archivo a S3: " + e.getMessage(), e);
-		} catch (IOException e) {
-			throw new S3UploadException("Error al leer el archivo: " + e.getMessage(), e);
-		}
-	}
+        if (file.getSize() == 0) {
+            throw new InvalidFileException(
+                    "El archivo no puede tener tamaño 0");
+        }
 
-	/**
-	 * Mueve un objeto dentro del mismo bucket (copiar + borrar)
-	 * 
-	 * @param bucket    Nombre del bucket
-	 * @param sourceKey Clave del objeto origen
-	 * @param destKey   Clave del objeto destino
-	 * @throws S3BucketNotFoundException si el bucket no existe
-	 * @throws S3ObjectNotFoundException si el objeto origen no existe
-	 * @throws S3AccessDeniedException   si no hay permisos
-	 */
-	public void moveObject(String bucket, String sourceKey, String destKey) {
+        try {
+            log.info("Subiendo archivo: {} al bucket: {}, tamaño: {} bytes",
+                    key, bucket, file.getSize());
 
-		try {
-			log.info("Moviendo objeto de {} a {} en el bucket: {}", sourceKey, destKey, bucket);
+            PutObjectRequest request = PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .contentType(file.getContentType())
+                    .contentLength(file.getSize())
+                    .build();
 
-			CopyObjectRequest copyRequest = CopyObjectRequest.builder().sourceBucket(bucket).sourceKey(sourceKey)
-					.destinationBucket(bucket).destinationKey(destKey).build();
+            s3Client.putObject(
+                    request,
+                    RequestBody.fromInputStream(
+                            file.getInputStream(),
+                            file.getSize()));
 
-			s3Client.copyObject(copyRequest);
+            log.info("Archivo subido exitosamente: {}", key);
 
-			log.info("Objeto copiado exitosamente, procediendo a eliminar el origen");
+        } catch (NoSuchBucketException e) {
+            throw new S3BucketNotFoundException(bucket, e);
 
-			deleteObject(bucket, sourceKey);
+        } catch (S3Exception e) {
+            if (e.statusCode() == 403) {
+                throw new S3AccessDeniedException(
+                        "subir archivo al bucket: " + bucket, e);
+            }
 
-			log.info("Objeto movido exitosamente de {} a {}", sourceKey, destKey);
+            throw new S3UploadException(
+                    "Error al subir el archivo a S3: " + e.getMessage(), e);
 
-		} catch (NoSuchBucketException e) {
-			throw new S3BucketNotFoundException(bucket, e);
-		} catch (NoSuchKeyException e) {
-			throw new S3ObjectNotFoundException(sourceKey, bucket, e);
-		} catch (S3Exception e) {
-			if (e.statusCode() == 403) {
-				throw new S3AccessDeniedException("mover objeto en el bucket: " + bucket, e);
-			}
-			throw new S3OperationException("Error al mover el objeto de " + sourceKey + " a " + destKey, e);
-		}
-	}
+        } catch (IOException e) {
+            throw new S3UploadException(
+                    "Error al leer el archivo: " + e.getMessage(), e);
+        }
+    }
 
-	/**
-	 * Elimina un objeto de S3
-	 * 
-	 * @param bucket Nombre del bucket
-	 * @param key    Clave del objeto
-	 * @throws S3BucketNotFoundException si el bucket no existe
-	 * @throws S3AccessDeniedException   si no hay permisos para eliminar
-	 */
-	public void deleteObject(String bucket, String key) {
+    // NUEVO METODO: SUBIR TICKETS PDF A S3
+    public void subirTicketPdf(
+            String bucket,
+            String key,
+            byte[] contenidoPdf) {
 
-		try {
-			log.info("Eliminando objeto: {} del bucket: {}", key, bucket);
+        if (contenidoPdf == null || contenidoPdf.length == 0) {
+            throw new InvalidFileException(
+                    "El ticket PDF está vacío");
+        }
 
-			DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder().bucket(bucket).key(key).build();
+        try {
+            log.info("Subiendo ticket PDF {} al bucket {}",
+                    key, bucket);
 
-			s3Client.deleteObject(deleteRequest);
+            PutObjectRequest request = PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .contentType("application/pdf")
+                    .contentLength((long) contenidoPdf.length)
+                    .build();
 
-			log.info("Objeto eliminado exitosamente: {}", key);
+            s3Client.putObject(
+                    request,
+                    RequestBody.fromBytes(contenidoPdf));
 
-		} catch (NoSuchBucketException e) {
-			throw new S3BucketNotFoundException(bucket, e);
-		} catch (S3Exception e) {
-			if (e.statusCode() == 403) {
-				throw new S3AccessDeniedException("eliminar objeto del bucket: " + bucket, e);
-			}
-			throw new S3OperationException("Error al eliminar el objeto: " + key, e);
-		}
-	}
+            log.info("Ticket PDF subido correctamente a S3: {}", key);
+
+        } catch (S3Exception e) {
+            if (e.statusCode() == 403) {
+                throw new S3AccessDeniedException(
+                        "subir ticket PDF al bucket: " + bucket, e);
+            }
+
+            throw new S3UploadException(
+                    "Error al subir el ticket PDF a S3: "
+                            + e.getMessage(), e);
+        }
+    }
+
+    // MOVER ARCHIVOS DENTRO DEL MISMO BUCKET
+    public void moveObject(
+            String bucket,
+            String sourceKey,
+            String destKey) {
+
+        try {
+            log.info("Moviendo objeto de {} a {} en el bucket: {}",
+                    sourceKey, destKey, bucket);
+
+            CopyObjectRequest request = CopyObjectRequest.builder()
+                    .sourceBucket(bucket)
+                    .sourceKey(sourceKey)
+                    .destinationBucket(bucket)
+                    .destinationKey(destKey)
+                    .build();
+
+            s3Client.copyObject(request);
+
+            log.info("Objeto copiado, eliminando el origen");
+
+            deleteObject(bucket, sourceKey);
+
+            log.info("Objeto movido exitosamente");
+
+        } catch (NoSuchBucketException e) {
+            throw new S3BucketNotFoundException(bucket, e);
+
+        } catch (NoSuchKeyException e) {
+            throw new S3ObjectNotFoundException(
+                    sourceKey, bucket, e);
+
+        } catch (S3Exception e) {
+            if (e.statusCode() == 403) {
+                throw new S3AccessDeniedException(
+                        "mover objeto en el bucket: " + bucket, e);
+            }
+
+            throw new S3OperationException(
+                    "Error al mover el objeto de "
+                            + sourceKey + " a " + destKey, e);
+        }
+    }
+
+    // ELIMINAR ARCHIVOS DE S3
+    public void deleteObject(String bucket, String key) {
+
+        try {
+            log.info("Eliminando objeto: {} del bucket: {}",
+                    key, bucket);
+
+            DeleteObjectRequest request = DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .build();
+
+            s3Client.deleteObject(request);
+
+            log.info("Objeto eliminado exitosamente: {}", key);
+
+        } catch (NoSuchBucketException e) {
+            throw new S3BucketNotFoundException(bucket, e);
+
+        } catch (S3Exception e) {
+            if (e.statusCode() == 403) {
+                throw new S3AccessDeniedException(
+                        "eliminar objeto del bucket: " + bucket, e);
+            }
+
+            throw new S3OperationException(
+                    "Error al eliminar el objeto: " + key, e);
+        }
+    }
 }
