@@ -29,11 +29,18 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          command_timeout: 5m
           script: |
             set -e
+
+            echo "Descargando imagen Docker"
             docker pull dieguin1990/reservas-concierto:1.0
-            docker stop reservas-concierto-aws || true
-            docker rm reservas-concierto-aws || true
+
+            echo "Deteniendo contenedor anterior"
+            docker rm -f reservas-concierto-aws || true
+
+            echo "Iniciando contenedor actualizado"
             docker run -d \
               --name reservas-concierto-aws \
               --restart unless-stopped \
@@ -43,5 +50,20 @@ jobs:
               -e RESERVAS_SUBIR_S3=true \
               -e RESERVAS_BUCKET=reservas-concierto-duoc-2026-dcc \
               dieguin1990/reservas-concierto:1.0
-            sleep 15
-            curl -fsS http://localhost:8080/actuator/health
+
+            echo "Esperando inicio de Spring Boot"
+            sleep 30
+
+            echo "Comprobando API de reservas"
+            curl --retry 6 \
+              --retry-delay 5 \
+              --retry-all-errors \
+              -fsS \
+              -o /dev/null \
+              -w "HTTP %{http_code}\n" \
+              -X POST \
+              http://localhost:8080/api/reservas/ticket \
+              -H "Content-Type: application/json" \
+              -d '{"nombreCliente":"Juan Perez","correoCliente":"juan@example.com","nombreEvento":"Concierto de Rock 2026","cantidadEntradas":2}'
+
+            echo "Despliegue completado"
